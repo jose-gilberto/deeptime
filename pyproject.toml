@@ -89,7 +89,7 @@ executionEnvironments = [
 [tool.pytest.ini_options]
 addopts = "--cov-report xml:coverage.xml --cov src --cov-fail-under 0 --cov-append -m 'not integration'"
 pythonpath = [
-   "src" 
+   "src"
 ]
 testpaths = "tests"
 junit_family = "xunit2"
@@ -108,11 +108,11 @@ legacy_tox_ini = """
 envlist = py, integration, spark, all
 
 [testenv]
-commands = 
+commands =
     pytest -m "not integration and not spark" {posargs}
 
 [testenv:integration]
-commands = 
+commands =
     pytest -m "integration" {posargs}
 
 [testenv:spark]
@@ -120,15 +120,15 @@ extras = spark
 setenv =
     PYSPARK_DRIVER_PYTHON = {envpython}
     PYSPARK_PYTHON = {envpython}
-commands = 
+commands =
     pytest -m "spark" {posargs}
 
 [testenv:all]
 extras = all
-setenv = 
+setenv =
     PYSPARK_DRIVER_PYTHON = {envpython}
     PYSPARK_PYTHON = {envpython}
-commands = 
+commands =
     pytest {posargs}
 """
 
