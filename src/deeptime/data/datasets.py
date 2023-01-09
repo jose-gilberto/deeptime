@@ -23,8 +23,9 @@ class BaseDataset(Dataset):
 
     def __init__(self, x: np.ndarray, y: np.ndarray = None) -> None:
 
-        assert x.shape[0] == y.shape[0], 'The data and labels must ' \
-            'have the same number of instances.'
+        if y:
+            assert x.shape[0] == y.shape[0], 'The data and labels must ' \
+                'have the same number of instances.'
 
         self.x = x
         self.y = y
