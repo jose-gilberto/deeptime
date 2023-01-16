@@ -23,7 +23,7 @@ class BaseDataset(Dataset):
 
     def __init__(self, x: np.ndarray, y: np.ndarray = None) -> None:
 
-        if y:
+        if y is not None:
             assert x.shape[0] == y.shape[0], 'The data and labels must ' \
                 'have the same number of instances.'
 
@@ -34,10 +34,10 @@ class BaseDataset(Dataset):
         self,
         index: int
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        if self.y:
+        if self.y is not None:
             return (
                 torch.from_numpy(self.x[index]).float(),
-                torch.from_numpy(self.y[index]).float()
+                torch.tensor(self.y[index]).float()
             )
 
         return torch.from_numpy(self.x[index]).float()
@@ -93,7 +93,7 @@ class UCRDataset(BaseDataset):
         if verbose:
             print(f'Loading {name}/{split} dataset from sktime lib...')
 
-        x, y = load_UCR_UEA_dataset(name=name, split='train')
+        x, y = load_UCR_UEA_dataset(name=name, split=split)
 
         # Since the features from the sktime are interpreted as a Series
         # inside of a dataframe we have to manually convert them
