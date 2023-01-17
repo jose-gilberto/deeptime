@@ -48,6 +48,33 @@ class Conv1dSamePadding(nn.Conv1d):
         )
 
 
+class ConvBlock(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        stride: int,
+        bias: bool = True
+    ) -> None:
+        super().__init__()
+
+        self.layers = nn.Sequential(
+            Conv1dSamePadding(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                stride=stride,
+                bias=bias
+            ),
+            nn.BatchNorm1d(num_features=out_channels),
+            nn.ReLU()
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.layers(x)
+
+
 class GlobalAveragePooling(nn.Module):
     def __init__(self) -> None:
         super().__init__()
