@@ -88,17 +88,17 @@ class LinearAutoEncoder(pl.LightningModule):
 
     def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         loss = self._get_reconstruction_loss(batch)
-        self.log('train_loss', loss)
+        self.log('train_loss', loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         loss = self._get_reconstruction_loss(batch)
-        self.log('val_loss', loss)
+        self.log('val_loss', loss, prog_bar=True)
         return loss
 
     def test_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         loss = self._get_reconstruction_loss(batch)
-        self.log('test_loss', loss)
+        self.log('test_loss', loss, prog_bar=True)
         return loss
 
     def configure_optimizers(self) -> optim.Optimizer:
@@ -186,6 +186,7 @@ class LinearVariationalAutoEncoder(pl.LightningModule):
         kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
 
         loss = bce_loss + kl_loss
+        self.log('train_loss', loss, prog_bar=True)
 
         return loss
 
@@ -194,10 +195,36 @@ class LinearVariationalAutoEncoder(pl.LightningModule):
         batch: Any,
         batch_idx: int
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        return
+        x, _ = batch
+        x = x.view(x.shape[0], -1)
 
-    def test_step(self, *args: Any, **kwargs: Any) -> torch.Tensor:
-        return super().test_step(*args, **kwargs)
+        x_hat, mu, log_var = self(x)
+
+        bce_loss = nn.functional.mse_loss(x_hat, x, size_average=False)
+        kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
+
+        loss = bce_loss + kl_loss
+        self.log('val_loss', loss, prog_bar=True)
+
+        return loss
+
+    def test_step(
+        self,
+        batch: Any,
+        batch_idx: int
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        x, _ = batch
+        x = x.view(x.shape[0], -1)
+
+        x_hat, mu, log_var = self(x)
+
+        bce_loss = nn.functional.mse_loss(x_hat, x, size_average=False)
+        kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
+
+        loss = bce_loss + kl_loss
+        self.log('test_loss', loss, prog_bar=True)
+
+        return loss
 
     def configure_optimizers(self) -> Any:
         optimizer = optim.Adam(self.parameters(), lr=1e-4)
