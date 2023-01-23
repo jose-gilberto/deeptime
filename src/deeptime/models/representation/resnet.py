@@ -163,3 +163,132 @@ class ResNetAutoEncoder(pl.LightningModule):
 
     def configure_optimizers(self) -> Any:
         return optim.Adam(self.parameters(), lr=1e-4)
+
+
+class ResNetVariationalAutoEncoder(pl.LightningModule):
+
+    def __init__(
+        self,
+        in_channels: int,
+        in_features: int,
+        mid_channels: int,
+        latent_dim: int
+    ) -> None:
+        super().__init__()
+
+        self.in_channels = in_channels
+        self.in_features = in_features
+        self.mid_channels = mid_channels
+        self.latent_dim = latent_dim
+
+        self.e = nn.Sequential(
+            ResNetBlock(
+                in_channels=in_channels,
+                out_channels=mid_channels,
+                bias=False,
+            ),
+            ResNetBlock(
+                in_channels=mid_channels,
+                out_channels=mid_channels * 2,
+                bias=False,
+            ),
+            ResNetBlock(
+                in_channels=mid_channels * 2,
+                out_channels=mid_channels * 2,
+                bias=False,
+            ),
+            nn.Flatten(),
+            nn.Linear(
+                in_features=mid_channels * 2 * in_features,
+                out_features=256,
+                bias=False,
+            ),
+            nn.ReLU(),
+            nn.Linear(
+                in_features=256,
+                out_features=128,
+                bias=False,
+            ),
+            nn.ReLU(),
+            nn.Linear(
+                in_features=128,
+                out_features=latent_dim * 2,
+                bias=False,
+            )
+        )
+
+        self.d = nn.Sequential(
+            nn.Linear(
+                in_features=latent_dim,
+                out_features=128,
+                bias=False,
+            ),
+            nn.ReLU(),
+            nn.Linear(
+                in_features=128,
+                out_features=256,
+                bias=False,
+            ),
+            nn.ReLU(),
+            nn.Linear(
+                in_features=256,
+                out_features=mid_channels * 2 * in_features,
+                bias=False,
+            ),
+            UpSample(
+                out_channels=mid_channels * 2,
+                series_length=in_features,
+            ),
+            ResNetBlock(
+                in_channels=mid_channels * 2,
+                out_channels=mid_channels * 2
+            ),
+            ResNetBlock(
+                in_channels=mid_channels * 2,
+                out_channels=mid_channels
+            ),
+            ResNetBlock(
+                in_channels=mid_channels,
+                out_channels=in_channels
+            )
+        )
+
+    def reparametrize(
+        self,
+        mu: torch.Tensor,
+        log_var: torch.Tensor,
+    ) -> torch.Tensor:
+        std = torch.exp(0.5 * log_var)
+        eps = torch.randn_like(std)
+        sample = mu + (eps * std)
+        return sample
+
+    def forward(
+        self,
+        x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        x = self.e(x)
+        x = x.view(-1, 2, self.latent_dim)
+
+        mu = x[:, 0, :]
+        log_var = x[:, 1, :]
+
+        z = self.reparametrize(mu, log_var)
+
+        x_hat = self.d(z)
+        return x_hat, mu, log_var
+
+    def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
+        x, _ = batch
+
+        x_hat, mu, log_var = self(x)
+
+        recon_loss = nn.functional.mse_loss(x_hat, x, size_average=False)
+        kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
+        loss = recon_loss + kl_loss
+
+        self.log('train_loss', loss)
+        return loss
+
+    def configure_optimizers(self) -> Any:
+        return optim.Adam(self.parameters(), lr=1e-4)

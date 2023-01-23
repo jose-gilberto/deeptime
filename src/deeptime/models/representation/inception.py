@@ -216,3 +216,164 @@ class InceptionAutoEncoder(pl.LightningModule):
 
     def configure_optimizers(self) -> Any:
         return optim.Adam(self.parameters(), lr=1e-4)
+
+
+class InceptionVariationalAutoEncoder(pl.LightningModule):
+
+    def __init__(
+        self,
+        num_blocks: int,
+        in_channels: int,
+        in_features: int,
+        out_channels: Union[List[int], int],
+        bottleneck_channels: Union[List[int], int],
+        kernel_sizes: Union[List[int], int],
+        use_residuals: Union[List[bool], bool, str] = 'default',
+        latent_dim: int = 32,
+    ) -> None:
+        super().__init__()
+
+        channels = (
+            [in_channels] +
+            cast(List[int], self._expand_to_blocks(out_channels, num_blocks))
+        )
+
+        bottleneck_channels = cast(
+            List[int],
+            self._expand_to_blocks(bottleneck_channels, num_blocks)
+        )
+
+        kernel_sizes = cast(
+            List[int],
+            self._expand_to_blocks(kernel_sizes, num_blocks)
+        )
+
+        if use_residuals == 'default':
+            use_residuals = [
+                True if i % 3 == 2 else False for i in range(num_blocks)
+            ]
+        use_residuals = cast(
+            List[bool],
+            self._expand_to_blocks(
+                cast(Union[bool, List[bool]], use_residuals),
+                num_blocks
+            )
+        )
+
+        self.e_blocks = nn.Sequential(*[
+            InceptionBlock(
+                in_channels=channels[i],
+                out_channels=channels[i + 1],
+                residual=use_residuals[i],
+                bottleneck_channels=bottleneck_channels[i],
+                kernel_size=kernel_sizes[i]
+            ) for i in range(num_blocks)
+        ])
+
+        self.e_head = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(
+                in_features=in_features * out_channels,
+                out_features=256,
+                bias=False,
+            ),
+            nn.ReLU(),
+            nn.Linear(
+                in_features=256,
+                out_features=128,
+                bias=False,
+            ),
+            nn.ReLU(),
+            nn.Linear(
+                in_features=128,
+                out_features=latent_dim * 2,
+                bias=False
+            )
+        )
+
+        self.d_blocks = nn.Sequential(*[
+            InceptionBlock(
+                in_channels=channels[i + 1],
+                out_channels=channels[i],
+                residual=use_residuals[i],
+                bottleneck_channels=bottleneck_channels[i],
+                kernel_size=kernel_sizes[i]
+            ) for i in range(num_blocks - 1, -1, -1)
+        ])
+
+        self.d_head = nn.Sequential(
+            nn.Linear(
+                in_features=latent_dim,
+                out_features=128,
+                bias=False,
+            ),
+            nn.ReLU(),
+            nn.Linear(
+                in_features=128,
+                out_features=256,
+                bias=False,
+            ),
+            nn.ReLU(),
+            nn.Linear(
+                in_features=256,
+                out_features=128 * in_features,
+                bias=False,
+            ),
+            UpSample(out_channels=128, series_length=in_features),
+        )
+
+        self.latent_dim = latent_dim
+
+    @staticmethod
+    def _expand_to_blocks(
+        value: Union[int, bool, List[int], List[bool]],
+        num_blocks: int
+    ) -> Union[List[int], List[bool]]:
+        if isinstance(value, list):
+            assert len(value) == num_blocks, \
+                f'Length of inputs lists must be the same as num blocks, ' \
+                f'expected length {num_blocks}, got {len(value)}'
+        else:
+            value = [value] * num_blocks
+
+        return value
+
+    def reparametrize(
+        self,
+        mu: torch.Tensor,
+        log_var: torch.Tensor
+    ) -> torch.Tensor:
+        std = torch.exp(0.5 * log_var)
+        eps = torch.randn_like(std)
+        sample = mu + (eps * std)
+        return sample
+
+    def forward(
+        self,
+        x: torch.Tensor
+    ) -> torch.Tensor:
+        x = self.e_blocks(x)
+        x = x.view(-1, 2, self.latent_dim)
+
+        mu = x[:, 0, :]
+        log_var = x[:, 1, :]
+
+        z = self.reparametrize(mu, log_var)
+
+        x_hat = self.d_head(z)
+        x_hat = self.d_blocks(x_hat)
+        return x_hat, mu, log_var
+
+    def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
+        x, _ = batch
+        x_hat, mu, log_var = self(x)
+
+        recon_loss = nn.functional.mse_loss(x_hat, x, size_average=False)
+        kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
+        loss = recon_loss + kl_loss
+
+        self.log('train_loss', loss)
+        return loss
+
+    def configure_optimizers(self) -> Any:
+        return optim.Adam(self.parameters(), lr=1e-4)
