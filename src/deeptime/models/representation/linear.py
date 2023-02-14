@@ -18,9 +18,14 @@ class LinearAutoEncoder(pl.LightningModule):
         self,
         input_dim: int,
         latent_dim: int,
-        optim: str = 'Adam'
+        optimizer: str = 'Adam',
+        learning_rate: float = 1e-4,
+        log_first: bool = False,
     ) -> None:
         super().__init__()
+
+        # Save Model Hyperparameters
+        self.save_hyperparameters()
 
         # Encoder Architecture
         self.e = nn.Sequential(
@@ -29,20 +34,19 @@ class LinearAutoEncoder(pl.LightningModule):
                 out_features=500,
                 bias=False
             ),
-            nn.ReLU(),
-            nn.Dropout(p=0.2),
+            nn.Tanh(),
             nn.Linear(
                 in_features=500,
                 out_features=500,
                 bias=False
             ),
-            nn.ReLU(),
-            nn.Dropout(p=0.2),
+            nn.Tanh(),
             nn.Linear(
                 in_features=500,
                 out_features=latent_dim,
                 bias=False
-            )
+            ),
+            nn.Tanh()
         )
 
         # Decoder Architecture
@@ -52,15 +56,13 @@ class LinearAutoEncoder(pl.LightningModule):
                 out_features=500,
                 bias=False
             ),
-            nn.ReLU(),
-            nn.Dropout(p=0.2),
+            nn.Tanh(),
             nn.Linear(
                 in_features=500,
                 out_features=500,
                 bias=False
             ),
-            nn.ReLU(),
-            nn.Dropout(p=0.2),
+            nn.Tanh(),
             nn.Linear(
                 in_features=500,
                 out_features=input_dim,
@@ -68,7 +70,14 @@ class LinearAutoEncoder(pl.LightningModule):
             )
         )
 
-        self.optimizer_name = optim
+        self.optimizer_name = optimizer
+        self.learning_rate = learning_rate
+
+        self.log_first = log_first
+
+        if self.log_first:
+            self.xhats = []
+            self.xs = []
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         z = self.e(x)
@@ -76,7 +85,8 @@ class LinearAutoEncoder(pl.LightningModule):
 
     def _get_reconstruction_loss(
         self,
-        batch: Tuple[torch.Tensor, torch.Tensor]
+        batch: Tuple[torch.Tensor, torch.Tensor],
+        batch_idx: int
     ) -> torch.Tensor:
         x, _ = batch
         x = x.view(x.shape[0], -1)
@@ -84,36 +94,44 @@ class LinearAutoEncoder(pl.LightningModule):
         x_hat, z = self(x)
         loss = nn.functional.mse_loss(x_hat, x)
 
+        if self.log_first and batch_idx == 1:
+            self.xs.append(x[0].tolist())
+            self.xhats.append(x_hat[0].tolist())
+
         return loss
 
-    def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
-        loss = self._get_reconstruction_loss(batch)
+    def training_step(
+        self,
+        batch: Tuple[torch.Tensor, torch.Tensor],
+        batch_idx: int
+    ) -> torch.Tensor:
+        loss = self._get_reconstruction_loss(batch, batch_idx)
         self.log('train_loss', loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
-        loss = self._get_reconstruction_loss(batch)
+        loss = self._get_reconstruction_loss(batch, batch_idx)
         self.log('val_loss', loss, prog_bar=True)
         return loss
 
     def test_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
-        loss = self._get_reconstruction_loss(batch)
+        loss = self._get_reconstruction_loss(batch, batch_idx)
         self.log('test_loss', loss, prog_bar=True)
         return loss
 
+    # def predict_step(
+    #     self,
+    #     batch: Any,
+    #     batch_idx: int,
+    #     dataloader_idx: int = 0
+    # ) -> Any:
+    #     x, _ = batch
+    #     return self(x), x
+
     def configure_optimizers(self) -> optim.Optimizer:
         if self.optimizer_name == 'Adam':
-            optimizer = optim.Adam(self.parameters(), lr=1e-3)
-            scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, mode='min', factor=0.2, patience=30, min_lr=5e-5
-            )
-
-            # TODO: monitor val loss
-            return {
-                'optimizer': optimizer,
-                'lr_scheduler': scheduler,
-                'monitor': 'train_loss'
-            }
+            optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
+            return optimizer
 
         raise NotImplementedError()
 
@@ -225,6 +243,15 @@ class LinearVariationalAutoEncoder(pl.LightningModule):
         self.log('test_loss', loss, prog_bar=True)
 
         return loss
+
+    def predict_step(
+        self,
+        batch: Any,
+        batch_idx: int,
+        dataloader_idx: int = 0
+    ) -> Any:
+        x, _ = batch
+        return self(x), x
 
     def configure_optimizers(self) -> Any:
         optimizer = optim.Adam(self.parameters(), lr=1e-4)

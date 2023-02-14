@@ -44,6 +44,12 @@ class UcrDataModule(pl.LightningDataModule):
         self.train_size = train_size
         self.val_size = val_size
 
+        # TODO: remove this part and get seq_len in another way
+        x_train, _ = load_UCR_UEA_dataset(
+            name=self.dataset_name, split='train')
+
+        self.sequence_length = x_train.values[0][0].shape[0]
+
     def prepare_data(self) -> None:
         """ Download the dataset from the sktime library and loads into a
         data structure compatible with the transformations that will occur.
@@ -115,39 +121,37 @@ class UcrDataModule(pl.LightningDataModule):
         )
 
         # Assign train/val datasets for use in dataloaders
-        if stage == 'fit':
-            x_train = np.loadtxt(
-                os.path.join(dataset_dir, 'x_train.np'),
-                dtype=np.float64
-            )
-            x_train = x_train.reshape((x_train.shape[0], 1, x_train.shape[1]))
-            y_train = np.loadtxt(
-                os.path.join(dataset_dir, 'y_train.np'),
-                dtype=np.int32
-            )
-            # Instanciate the full dataset
-            full_dataset = BaseDataset(x=x_train, y=y_train)
+        x_train = np.loadtxt(
+            os.path.join(dataset_dir, 'x_train.np'),
+            dtype=np.float64
+        )
+        x_train = x_train.reshape((x_train.shape[0], 1, x_train.shape[1]))
+        y_train = np.loadtxt(
+            os.path.join(dataset_dir, 'y_train.np'),
+            dtype=np.int32
+        )
+        # Instanciate the full dataset
+        full_dataset = BaseDataset(x=x_train, y=y_train)
 
-            train_size = int(len(full_dataset) * self.train_size)
-            val_size = len(full_dataset) - train_size
+        train_size = int(len(full_dataset) * self.train_size)
+        val_size = len(full_dataset) - train_size
 
-            self.train_dataset, self.val_dataset = random_split(
-                full_dataset, [train_size, val_size]
-            )
+        self.train_dataset, self.val_dataset = random_split(
+            full_dataset, [train_size, val_size]
+        )
 
         # Assign test dataset for use in dataloaders
-        if stage == 'test':
-            x_test = np.loadtxt(
-                os.path.join(dataset_dir, 'x_test.np'),
-                dtype=np.float64
-            )
-            x_test = x_test.reshape(x_test.shape[0], 1, x_test.shape[1])
-            y_test = np.loadtxt(
-                os.path.join(dataset_dir, 'y_test.np'),
-                dtype=np.int32
-            )
+        x_test = np.loadtxt(
+            os.path.join(dataset_dir, 'x_test.np'),
+            dtype=np.float64
+        )
+        x_test = x_test.reshape(x_test.shape[0], 1, x_test.shape[1])
+        y_test = np.loadtxt(
+            os.path.join(dataset_dir, 'y_test.np'),
+            dtype=np.int32
+        )
 
-            self.test_dataset = BaseDataset(x=x_test, y=y_test)
+        self.test_dataset = BaseDataset(x=x_test, y=y_test)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(self.train_dataset, batch_size=self.batch_size)
