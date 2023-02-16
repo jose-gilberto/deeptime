@@ -62,8 +62,16 @@ class ResNetAutoEncoder(pl.LightningModule):
         in_features: int,
         mid_channels: int = 64,
         latent_dim: int = 32,
+        learning_rate: float = 5e-4,
     ) -> None:
         super().__init__()
+        self.save_hyperparameters()
+
+        self.learning_rate = learning_rate
+        self.in_channels = in_channels
+        self.in_features = in_features
+        self.latent_dim = latent_dim
+        self.mid_channels = mid_channels
 
         self.e = nn.Sequential(
             ResNetBlock(
@@ -162,7 +170,7 @@ class ResNetAutoEncoder(pl.LightningModule):
         return super().test_step(*args, **kwargs)
 
     def configure_optimizers(self) -> Any:
-        return optim.Adam(self.parameters(), lr=1e-4)
+        return optim.Adam(self.parameters(), lr=self.learning_rate)
 
 
 class ResNetVariationalAutoEncoder(pl.LightningModule):

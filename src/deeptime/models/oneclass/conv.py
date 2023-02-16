@@ -140,7 +140,8 @@ class ConvOCC(pl.LightningModule):
         # z dimensions = [n_instances, latent_dim]
         distance = torch.sum((z - self.center) ** 2, dim=1)
         scores = distance - self.R ** 2
-        loss = torch.mean(torch.max(torch.exp(scores), scores + 1))
+        # loss = torch.mean(torch.max(torch.exp(scores), scores + 1))
+        loss = torch.mean(torch.max(torch.zeros_like(scores), scores))
 
         if return_representations:
             return loss, z
