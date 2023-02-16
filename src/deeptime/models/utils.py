@@ -68,7 +68,7 @@ class ConvBlock(nn.Module):
                 bias=bias
             ),
             nn.BatchNorm1d(num_features=out_channels),
-            nn.ReLU()
+            nn.Tanh()
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

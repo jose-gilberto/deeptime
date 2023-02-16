@@ -95,18 +95,19 @@ class ResNetAutoEncoder(pl.LightningModule):
                 out_features=256,
                 bias=False,
             ),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(
                 in_features=256,
                 out_features=128,
                 bias=False,
             ),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(
                 in_features=128,
                 out_features=latent_dim,
                 bias=False,
-            )
+            ),
+            nn.Tanh(),
         )
 
         self.d = nn.Sequential(
@@ -115,13 +116,13 @@ class ResNetAutoEncoder(pl.LightningModule):
                 out_features=128,
                 bias=False,
             ),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(
                 in_features=128,
                 out_features=256,
                 bias=False,
             ),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(
                 in_features=256,
                 out_features=mid_channels * 2 * in_features,
