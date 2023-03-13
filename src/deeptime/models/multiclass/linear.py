@@ -35,12 +35,12 @@ class LinearClassifier(pl.LightningModule):
                 in_features=in_features,
                 out_features=hidden_features
             ),
-            activation_layers[activation],
+            activation_layers[activation](),
             nn.Linear(
                 in_features=hidden_features,
                 out_features=hidden_features
             ),
-            activation_layers[activation],
+            activation_layers[activation](),
             nn.Linear(
                 in_features=hidden_features,
                 out_features=num_classes
