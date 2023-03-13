@@ -30,7 +30,7 @@ class LeakySineLU(nn.Module):
         self.beta = beta
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        negative_idx = x < 0
-        x[negative_idx] = self.beta * torch.sin(self.alpha * x) + x
-        x[~negative_idx] = torch.sin(self.alpha * x) + x
-        return x
+        return torch.max(
+            self.beta * torch.sin(self.alpha * x) + x,
+            torch.sin(self.alpha * x) + x
+        )

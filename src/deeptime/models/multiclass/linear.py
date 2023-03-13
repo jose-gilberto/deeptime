@@ -48,6 +48,7 @@ class LinearClassifier(pl.LightningModule):
             nn.Softmax()
         )
 
+        self.criterion = nn.CrossEntropyLoss()
         self.learning_rate = learning_rate
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
