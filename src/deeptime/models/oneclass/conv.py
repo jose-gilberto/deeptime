@@ -7,12 +7,22 @@ from typing import Any, Tuple
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from sklearn.metrics import f1_score
+from sklearn.metrics import (accuracy_score, f1_score, precision_score,
+                             recall_score)
 from torch import nn, optim
 
 from deeptime.models.utils import Conv1dSamePadding  # GlobalAveragePooling,
+from deeptime.nn.activations import SinL
 
 # from deeptime.models.utils import UpSample
+
+activations_layers = {
+    'relu': nn.ReLU,
+    'swish': nn.SiLU,
+    'tanh': nn.Tanh,
+    'leakyrelu': nn.LeakyReLU,
+    'sinl': SinL
+}
 
 
 class ConvOCC(pl.LightningModule):
@@ -22,6 +32,7 @@ class ConvOCC(pl.LightningModule):
         in_channels: int,
         in_features: int,
         latent_dim: int,
+        activation: str = 'relu',
         optimizer: str = 'Adam',
         learning_rate: float = 1e-6,
         weight_decay: float = 0,
@@ -37,6 +48,13 @@ class ConvOCC(pl.LightningModule):
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
 
+        self.activation = activation
+        activation_kwargs = {}
+        if self.activation == 'leakyrelu':
+            activation_kwargs = {
+                'negative_slope': 0.1,
+            }
+
         self.R = torch.tensor(radius, device=self.device)
 
         self.e = nn.Sequential(
@@ -48,7 +66,8 @@ class ConvOCC(pl.LightningModule):
                 bias=False,
             ),
             nn.BatchNorm1d(num_features=128),
-            nn.Tanh(),
+            # nn.Tanh(),
+            activations_layers[self.activation](**activation_kwargs),
             Conv1dSamePadding(
                 in_channels=128,
                 out_channels=256,
@@ -57,7 +76,7 @@ class ConvOCC(pl.LightningModule):
                 bias=False,
             ),
             nn.BatchNorm1d(num_features=256),
-            nn.Tanh(),
+            activations_layers[self.activation](**activation_kwargs),
             Conv1dSamePadding(
                 in_channels=256,
                 out_channels=128,
@@ -66,7 +85,7 @@ class ConvOCC(pl.LightningModule):
                 bias=False,
             ),
             nn.BatchNorm1d(num_features=128),
-            nn.Tanh(),
+            activations_layers[self.activation](**activation_kwargs),
 
             # GlobalAveragePooling(),
             nn.Flatten(),
@@ -76,19 +95,19 @@ class ConvOCC(pl.LightningModule):
                 out_features=256,
                 bias=False
             ),
-            nn.Tanh(),
+            activations_layers[self.activation](**activation_kwargs),
             nn.Linear(
                 in_features=256,
                 out_features=128,
                 bias=False
             ),
-            nn.Tanh(),
+            activations_layers[self.activation](**activation_kwargs),
             nn.Linear(
                 in_features=128,
                 out_features=latent_dim,
                 bias=False
             ),
-            nn.Tanh()
+            activations_layers[self.activation](**activation_kwargs),
         )
 
     def _init_center(
@@ -180,7 +199,9 @@ class ConvOCC(pl.LightningModule):
 
         # self.log('val_loss', loss, prog_bar=True)
         self.log('test_f1_score', f1_score(labels, pred))
-        return
+        self.log('test_accuracy_score', accuracy_score(labels, pred))
+        self.log('test_recall_score', recall_score(labels, pred))
+        self.log('test_precision_score', precision_score(labels, pred))
 
     def validation_step(self, batch: Any, batch_idx: int):
         loss = self._get_oneclass_loss(batch)

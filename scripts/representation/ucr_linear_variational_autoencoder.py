@@ -1,17 +1,68 @@
 from __future__ import annotations
 
 import os
+import warnings
 
-import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning.callbacks import EarlyStopping, RichProgressBar
 from pytorch_lightning.callbacks.progress.rich_progress import \
     RichProgressBarTheme
-from torch import nn
+from sktime.datasets import load_UCR_UEA_dataset
+from torch.utils.data import DataLoader
 
-from deeptime.data.datamodules import UcrDataModule
+from deeptime.data import BaseDataset
 from deeptime.models.representation import LinearVariationalAutoEncoder
+
+warnings.filterwarnings('ignore')
+
+
+class Plot2DCallback(pl.Callback):
+
+    def __init__(self, path: str) -> None:
+        super().__init__()
+        self.path = path
+
+    def on_train_epoch_end(
+        self,
+        trainer: pl.Trainer,
+        pl_module: pl.LightningModule
+    ) -> None:
+        plt.figure(figsize=(10, 10))
+
+        plt.xlim(-1, 1)
+        plt.ylim(-1, 1)
+
+        colors = []
+
+        representations = []
+        for x, _ in trainer.train_dataloader:
+            x = x.view(x.shape[0], -1)
+            _, z, _ = pl_module(x.to('cuda'))
+            representations.extend(z.tolist())
+
+        for _ in representations:
+            colors.append('lightseagreen')
+
+        test_representations = []
+        for x, _ in trainer.val_dataloaders[0]:
+            x = x.view(x.shape[0], -1)
+            _, z, _ = pl_module(x.to('cuda'))
+            test_representations.extend(z.tolist())
+
+        for _ in test_representations:
+            colors.append('darkslategray')
+
+        representations.extend(test_representations)
+        representations = np.array(representations)
+
+        plt.scatter(representations[:, 0], representations[:, 1], c=colors)
+
+        plt.savefig(os.path.join(self.path, f'{trainer.current_epoch}.png'))
+        plt.close()
+
 
 progress_bar = RichProgressBar(
     theme=RichProgressBarTheme(
@@ -25,86 +76,120 @@ progress_bar = RichProgressBar(
         metrics='grey82',
     )
 )
+LATENT_DIM = 2
+LABEL = 1
+DATASET = 'Yoga'
+# 'WormsTwoClass',
+# 'Wine',
+# 'Wafer',
+# 'TwoLeadECG',
+# 'Strawberry',
+# 'SemgHandGenderCh2',
+# 'BeetleFly',
+# 'BirdChicken',
+# 'Computers',
+# 'DistalPhalanxOutlineCorrect',
+# 'Earthquakes',
+# 'ECG200',
+# 'ECGFiveDays',
+# 'FordA',
+# 'FordB',
+# 'HandOutlines',
+# 'ItalyPowerDemand',
+# 'MiddlePhalanxOutlineCorrect',
+# 'Chinatown',
+# 'FreezerRegularTrain',
+# 'FreezerSmallTrain',
+# 'GunPointAgeSpan',
+# 'GunPointMaleVersusFemale',
+# 'GunPointOldVersusYoung',
+# 'PowerCons',
+# 'Coffee',
+# 'Ham',
+# 'Herring',
+# 'Lightning2',
+# 'MoteStrain',
+# 'PhalangesOutlinesCorrect',
+# 'ProximalPhalanxOutlineCorrect',
+# 'ShapeletSim',
+# 'SonyAIBORobotSurface1',
+# 'SonyAIBORobotSurface2',
+# 'ToeSegmentation1',
+# 'ToeSegmentation2',
+# 'HouseTwenty'
 
-DATASETS = [
-    'Yoga', 'WormsTwoClass', 'Wine', 'Wafer', 'TwoLeadECG',
-    'Strawberry', 'SemgHandGenderCh2', 'BeetleFly', 'BirdChicken', 'Computers',
-    'DistalPhalanxOutlineCorrect',  'Earthquakes', 'ECG200', 'ECGFiveDays',
-    'FordA', 'FordB', 'HandOutlines', 'ItalyPowerDemand',
-    'MiddlePhalanxOutlineCorrect', 'Chinatown', 'FreezerRegularTrain',
-    'FreezerSmallTrain', 'GunPointAgeSpan', 'GunPointMaleVersusFemale',
-    'GunPointOldVersusYoung', 'PowerCons', 'Coffee', 'Ham', 'Herring',
-    'Lightning2', 'MoteStrain', 'PhalangesOutlinesCorrect',
-    'ProximalPhalanxOutlineCorrect', 'ShapeletSim', 'SonyAIBORobotSurface1',
-    'SonyAIBORobotSurface2', 'ToeSegmentation1', 'ToeSegmentation2',
-    'HouseTwenty'
-]
+print('#' * 50)
+print(f'Experiment with {DATASET} dataset...')
+print('#' * 50)
+print()
 
-RECON_LOSSES = []
+x_train, y_train = load_UCR_UEA_dataset(name=DATASET, split='train')
+x_test, y_test = load_UCR_UEA_dataset(name=DATASET, split='test')
 
-for dataset in DATASETS:
-    print()
-    print('#' * 50)
-    print(f'Experiment with {dataset} dataset...')
-    print('#' * 50)
-    print()
+sequence_length = x_train.values[0][0].shape[0]
 
-    data_dir = 'C:\\Users\\medei\\Desktop\\Gilberto\\' +\
-        'Projetos\\deeptime\\docs\\datasets'
+y_test = np.array(y_test, dtype=np.int32)
+y_train = np.array(y_train, dtype=np.int32)
 
-    data_module = UcrDataModule(dataset_name=dataset, data_dir=data_dir)
+# Filter only the class of interest
+x_train = x_train[y_train == LABEL]
+y_train = y_train[y_train == LABEL]
 
-    model = LinearVariationalAutoEncoder(
-        input_dim=data_module.sequence_length,
-        hidden_dim=128,
-        latent_dim=32
+x_train_transformed = np.array([
+    value[0].tolist() for value in x_train.values
+])
+
+x_test_transformed = np.array([
+    value[0].tolist() for value in x_test.values
+])
+
+x_train = np.expand_dims(x_train_transformed, axis=1)
+x_test = np.expand_dims(x_test_transformed, axis=1)
+
+train_dataset = BaseDataset(x=x_train, y=y_train)
+train_loader = DataLoader(train_dataset, batch_size=32)
+
+test_dataset = BaseDataset(x=x_test, y=y_test)
+test_loader = DataLoader(test_dataset, batch_size=32)
+
+model = LinearVariationalAutoEncoder(
+    input_dim=sequence_length,
+    latent_dim=LATENT_DIM
+)
+
+trainer = pl.Trainer(
+    max_epochs=2000,
+    accelerator='gpu',
+    devices=-1,
+    callbacks=[
+        EarlyStopping(
+            monitor='val_loss',
+            mode='min',
+            patience=50,
+        ),
+        progress_bar,
+        Plot2DCallback(path='./plots/linear_variational_autoencoder/')
+    ]
+)
+
+trainer.fit(
+    model=model,
+    train_dataloaders=train_loader,
+    val_dataloaders=test_loader
+)
+
+model_weight_dir = os.path.join(
+    '../../pretrain/representation/',
+    DATASET
+)
+
+if not os.path.exists(model_weight_dir):
+    os.mkdir(model_weight_dir)
+
+torch.save(
+    model.state_dict(),
+    os.path.join(
+        model_weight_dir,
+        f'linear_variational_autoencoder-dim={LATENT_DIM}-l={LABEL}.pt'
     )
-
-    trainer = pl.Trainer(
-        max_epochs=2000,
-        accelerator='gpu',
-        devices=-1,
-        callbacks=[
-            EarlyStopping(
-                monitor='val_loss',
-                mode='min',
-                patience=50,
-                min_delta=1.
-            ),
-            progress_bar
-        ]
-    )
-
-    trainer.fit(model=model, datamodule=data_module)
-
-    preds = trainer.predict(model, dataloaders=data_module.test_dataloader())
-    recon_loss = 0.
-
-    for batch in preds:
-        (x_hat, _, _), x = batch
-        recon_loss += nn.functional.mse_loss(
-            x_hat.reshape((x_hat.shape[0], 1, x_hat.shape[1])),
-            x
-        ).item()
-
-    RECON_LOSSES.append(recon_loss)
-
-    model_weight_dir = os.path.join(
-        '../../pretrain/representation/',
-        dataset
-    )
-
-    if not os.path.exists(model_weight_dir):
-        os.mkdir(model_weight_dir)
-
-    torch.save(
-        model.state_dict(),
-        os.path.join(model_weight_dir, 'linear_variational_autoencoder.pt')
-    )
-
-metrics = pd.DataFrame({
-    'dataset': DATASETS,
-    'metric': RECON_LOSSES
-})
-
-metrics.to_csv('./ucr_linear_variational_autoencoder.metrics.csv', index=False)
+)

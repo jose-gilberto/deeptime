@@ -159,13 +159,15 @@ class ResNetAutoEncoder(pl.LightningModule):
 
         return loss
 
-    def training_step(self, batch: Any) -> torch.Tensor:
+    def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         loss = self._get_reconstruction_loss(batch)
         self.log('train_loss', loss)
         return loss
 
-    def validation_step(self, *args: Any, **kwargs: Any):
-        return super().validation_step(*args, **kwargs)
+    def validation_step(self, batch: Any, batch_idx: int):
+        loss = self._get_reconstruction_loss(batch)
+        self.log('val_loss', loss, prog_bar=True)
+        return loss
 
     def test_step(self, *args: Any, **kwargs: Any):
         return super().test_step(*args, **kwargs)

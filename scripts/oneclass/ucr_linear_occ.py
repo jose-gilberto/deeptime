@@ -3,19 +3,18 @@ from __future__ import annotations
 import os
 import warnings
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.callbacks import RichProgressBar  # EarlyStopping,
+from pytorch_lightning.callbacks import RichProgressBar
 from pytorch_lightning.callbacks.progress.rich_progress import \
     RichProgressBarTheme
 from sktime.datasets import load_UCR_UEA_dataset
-# from torch import nn
 from torch.utils.data import DataLoader
 
-# from deeptime.data.datamodules import UcrDataModule
 from deeptime.data import BaseDataset
-from deeptime.models.oneclass.linear import LaeOCC
+from deeptime.models.oneclass.linear import LinearOCC
 
 # import pandas as pd
 

@@ -9,6 +9,16 @@ import pytorch_lightning as pl
 import torch
 from torch import nn, optim
 
+from deeptime.nn.activations import SinL
+
+activations_layers = {
+    'relu': nn.ReLU,
+    'swish': nn.SiLU,
+    'tanh': nn.Tanh,
+    'leakyrelu': nn.LeakyReLU,
+    'sinl': SinL
+}
+
 
 class LinearAutoEncoder(pl.LightningModule):
     """ Linear AutoEncoder.
@@ -18,14 +28,21 @@ class LinearAutoEncoder(pl.LightningModule):
         self,
         input_dim: int,
         latent_dim: int,
-        optimizer: str = 'Adam',
+        activation: str = 'relu',
+        optimizer: str = 'adam',
         learning_rate: float = 1e-4,
-        log_first: bool = False,
+        weight_decay: float = 0,
     ) -> None:
         super().__init__()
-
         # Save Model Hyperparameters
         self.save_hyperparameters()
+
+        activation_params = {}
+
+        if activation == 'leakyrelu':
+            activation_params = {
+                'negative_slope': 0.1
+            }
 
         # Encoder Architecture
         self.e = nn.Sequential(
@@ -34,19 +51,19 @@ class LinearAutoEncoder(pl.LightningModule):
                 out_features=500,
                 bias=False
             ),
-            nn.Tanh(),
+            activations_layers[activation](**activation_params),
             nn.Linear(
                 in_features=500,
                 out_features=500,
                 bias=False
             ),
-            nn.Tanh(),
+            activations_layers[activation](**activation_params),
             nn.Linear(
                 in_features=500,
                 out_features=latent_dim,
                 bias=False
             ),
-            nn.Tanh()
+            activations_layers[activation](**activation_params),
         )
 
         # Decoder Architecture
@@ -56,13 +73,13 @@ class LinearAutoEncoder(pl.LightningModule):
                 out_features=500,
                 bias=False
             ),
-            nn.Tanh(),
+            activations_layers[activation](**activation_params),
             nn.Linear(
                 in_features=500,
                 out_features=500,
                 bias=False
             ),
-            nn.Tanh(),
+            activations_layers[activation](**activation_params),
             nn.Linear(
                 in_features=500,
                 out_features=input_dim,
@@ -72,12 +89,7 @@ class LinearAutoEncoder(pl.LightningModule):
 
         self.optimizer_name = optimizer
         self.learning_rate = learning_rate
-
-        self.log_first = log_first
-
-        if self.log_first:
-            self.xhats = []
-            self.xs = []
+        self.weight_decay = weight_decay
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         z = self.e(x)
@@ -86,18 +98,12 @@ class LinearAutoEncoder(pl.LightningModule):
     def _get_reconstruction_loss(
         self,
         batch: Tuple[torch.Tensor, torch.Tensor],
-        batch_idx: int
     ) -> torch.Tensor:
         x, _ = batch
         x = x.view(x.shape[0], -1)
 
         x_hat, z = self(x)
         loss = nn.functional.mse_loss(x_hat, x)
-
-        if self.log_first and batch_idx == 1:
-            self.xs.append(x[0].tolist())
-            self.xhats.append(x_hat[0].tolist())
-
         return loss
 
     def training_step(
@@ -105,32 +111,27 @@ class LinearAutoEncoder(pl.LightningModule):
         batch: Tuple[torch.Tensor, torch.Tensor],
         batch_idx: int
     ) -> torch.Tensor:
-        loss = self._get_reconstruction_loss(batch, batch_idx)
+        loss = self._get_reconstruction_loss(batch)
         self.log('train_loss', loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
-        loss = self._get_reconstruction_loss(batch, batch_idx)
+        loss = self._get_reconstruction_loss(batch)
         self.log('val_loss', loss, prog_bar=True)
         return loss
 
     def test_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
-        loss = self._get_reconstruction_loss(batch, batch_idx)
+        loss = self._get_reconstruction_loss(batch)
         self.log('test_loss', loss, prog_bar=True)
         return loss
 
-    # def predict_step(
-    #     self,
-    #     batch: Any,
-    #     batch_idx: int,
-    #     dataloader_idx: int = 0
-    # ) -> Any:
-    #     x, _ = batch
-    #     return self(x), x
-
     def configure_optimizers(self) -> optim.Optimizer:
-        if self.optimizer_name == 'Adam':
-            optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
+        if self.optimizer_name == 'adam':
+            optimizer = optim.Adam(
+                self.parameters(),
+                lr=self.learning_rate,
+                weight_decay=self.weight_decay
+            )
             return optimizer
 
         raise NotImplementedError()
@@ -141,30 +142,33 @@ class LinearVariationalAutoEncoder(pl.LightningModule):
     def __init__(
         self,
         input_dim: int,
-        hidden_dim: int,
-        latent_dim: int
+        latent_dim: int,
+        learning_rate: float = 5e-4,
     ) -> None:
         super().__init__()
 
         self.input_dim = input_dim
         self.latent_dim = latent_dim
 
+        self.learning_rate = learning_rate
+
         # Encoder
         self.e = nn.Sequential(
-            nn.Linear(in_features=input_dim, out_features=512),
-            nn.ReLU(),
-            nn.Linear(in_features=512, out_features=256),
-            nn.ReLU(),
-            nn.Linear(in_features=256, out_features=2 * latent_dim)
+            nn.Linear(in_features=input_dim, out_features=512, bias=False),
+            nn.Tanh(),
+            nn.Linear(in_features=512, out_features=256, bias=False),
+            nn.Tanh(),
+            nn.Linear(in_features=256, out_features=2*latent_dim, bias=False),
+            nn.Tanh(),
         )
 
         # Decoder
         self.d = nn.Sequential(
-            nn.Linear(in_features=latent_dim, out_features=256),
-            nn.ReLU(),
-            nn.Linear(in_features=256, out_features=512),
-            nn.ReLU(),
-            nn.Linear(in_features=512, out_features=input_dim)
+            nn.Linear(in_features=latent_dim, out_features=256, bias=False),
+            nn.Tanh(),
+            nn.Linear(in_features=256, out_features=512, bias=False),
+            nn.Tanh(),
+            nn.Linear(in_features=512, out_features=input_dim, bias=False)
         )
 
     def reparametrize(
@@ -201,7 +205,10 @@ class LinearVariationalAutoEncoder(pl.LightningModule):
         x_hat, mu, log_var = self(x)
 
         bce_loss = nn.functional.mse_loss(x_hat, x, size_average=False)
-        kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
+        kl_loss = (
+            -0.5 *
+            (1 + log_var - mu ** 2 - torch.exp(log_var)).sum(dim=1)
+        ).mean(dim=0)
 
         loss = bce_loss + kl_loss
         self.log('train_loss', loss, prog_bar=True)
@@ -219,44 +226,17 @@ class LinearVariationalAutoEncoder(pl.LightningModule):
         x_hat, mu, log_var = self(x)
 
         bce_loss = nn.functional.mse_loss(x_hat, x, size_average=False)
-        kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
+        kl_loss = (
+            -0.5 *
+            (1 + log_var - mu ** 2 - torch.exp(log_var)).sum(dim=1)
+        ).mean(dim=0)
 
         loss = bce_loss + kl_loss
         self.log('val_loss', loss, prog_bar=True)
 
         return loss
 
-    def test_step(
-        self,
-        batch: Any,
-        batch_idx: int
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        x, _ = batch
-        x = x.view(x.shape[0], -1)
-
-        x_hat, mu, log_var = self(x)
-
-        bce_loss = nn.functional.mse_loss(x_hat, x, size_average=False)
-        kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
-
-        loss = bce_loss + kl_loss
-        self.log('test_loss', loss, prog_bar=True)
-
-        return loss
-
-    def predict_step(
-        self,
-        batch: Any,
-        batch_idx: int,
-        dataloader_idx: int = 0
-    ) -> Any:
-        x, _ = batch
-        return self(x), x
-
     def configure_optimizers(self) -> Any:
-        optimizer = optim.Adam(self.parameters(), lr=1e-4)
+        optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
 
-        return {
-            'optimizer': optimizer,
-            'monitor': 'train_loss'
-        }
+        return optimizer

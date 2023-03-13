@@ -6,8 +6,19 @@ from typing import Any, Tuple
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from sklearn.metrics import f1_score
+from sklearn.metrics import (accuracy_score, f1_score, precision_score,
+                             recall_score)
 from torch import nn, optim
+
+from deeptime.nn.activations import SinL
+
+activations_layers = {
+    'relu': nn.ReLU,
+    'swish': nn.SiLU,
+    'tanh': nn.Tanh,
+    'leakyrelu': nn.LeakyReLU,
+    'sinl': SinL,
+}
 
 
 class LinearOCC(pl.LightningModule):
@@ -26,34 +37,40 @@ class LinearOCC(pl.LightningModule):
         self,
         input_dim: int,
         latent_dim: int,
+        activation: str = 'relu',
         optim: str = 'Adam',
         learning_rate: float = 1e-6,
         radius: float = 0
     ) -> None:
         super().__init__()
-
         self.save_hyperparameters()
 
-        # Encoder Architecture
+        activation_params = {}
+
+        if activation == 'leakyrelu':
+            activation_params = {
+                'negative_slope': 0.1
+            }
+
         self.e = nn.Sequential(
             nn.Linear(
                 in_features=input_dim,
                 out_features=500,
                 bias=False
             ),
-            nn.Tanh(),
+            activations_layers[activation](**activation_params),
             nn.Linear(
                 in_features=500,
                 out_features=500,
                 bias=False
             ),
-            nn.Tanh(),
+            activations_layers[activation](**activation_params),
             nn.Linear(
                 in_features=500,
                 out_features=latent_dim,
                 bias=False
             ),
-            nn.Tanh()
+            activations_layers[activation](**activation_params),
         )
 
         self.latent_dim = latent_dim
@@ -113,7 +130,8 @@ class LinearOCC(pl.LightningModule):
         # z dimensions = [n_instances, latent_dim]
         distance = torch.sum((z - self.center) ** 2, dim=1)
         scores = distance - self.R ** 2
-        loss = torch.mean(torch.max(torch.exp(scores), scores + 1))
+        # loss = torch.mean(torch.max(torch.exp(scores), scores + 1))
+        loss = torch.mean(torch.max(torch.zeros_like(scores), scores))
 
         if return_representations:
             return loss, z
@@ -150,7 +168,7 @@ class LinearOCC(pl.LightningModule):
 
         return occ_loss
 
-    def test_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
+    def validation_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         # loss, z = self._get_oneclass_loss(batch, return_representations=True)
         x, labels = batch
         pred = self.predict(x)
@@ -159,13 +177,21 @@ class LinearOCC(pl.LightningModule):
         labels = np.array(labels.tolist())
 
         # self.log('val_loss', loss, prog_bar=True)
-        self.log('val_f1_score', f1_score(labels, pred))
+        self.log('val_f1_score', f1_score(labels, pred), prog_bar=True)
         return
 
-    # def test_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
-    #     loss = self._get_reconstruction_loss(batch)
-    #     self.log('test_loss', loss, prog_bar=True)
-    #     return loss
+    def test_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
+        x, labels = batch
+        pred = self.predict(x)
+
+        # Convert to numpy array like structures
+        pred = np.array(pred.tolist())
+        labels = np.array(labels.tolist())
+
+        self.log('test_accuracy', accuracy_score(labels, pred))
+        self.log('test_f1_score', f1_score(labels, pred))
+        self.log('test_recall_score', recall_score(labels, pred))
+        self.log('test_precision_score', precision_score(labels, pred))
 
     # def predict_step(
     #     self,

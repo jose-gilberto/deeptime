@@ -9,6 +9,15 @@ from torch import nn, optim
 
 from deeptime.models.utils import Conv1dSamePadding  # GlobalAveragePooling,
 from deeptime.models.utils import UpSample
+from deeptime.nn.activations import SinL
+
+activations_layers = {
+    'relu': nn.ReLU,
+    'swish': nn.SiLU,
+    'tanh': nn.Tanh,
+    'leakyrelu': nn.LeakyReLU,
+    'sinl': SinL
+}
 
 
 class ConvAutoEncoder(pl.LightningModule):
@@ -18,6 +27,7 @@ class ConvAutoEncoder(pl.LightningModule):
         in_channels: int,
         in_features: int,
         latent_dim: int,
+        activation: str = 'relu',
         optimizer: str = 'Adam',
         learning_rate: float = 1e-4,
         weight_decay: float = 0,
@@ -32,6 +42,13 @@ class ConvAutoEncoder(pl.LightningModule):
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
 
+        self.activation = activation
+        activation_kwargs = {}
+        if self.activation == 'leakyrelu':
+            activation_kwargs = {
+                'negative_slope': 0.1,
+            }
+
         self.e = nn.Sequential(
             Conv1dSamePadding(
                 in_channels=in_channels,
@@ -41,7 +58,8 @@ class ConvAutoEncoder(pl.LightningModule):
                 bias=False,
             ),
             nn.BatchNorm1d(num_features=128),
-            nn.Tanh(),
+            # nn.Tanh(),
+            activations_layers[self.activation](**activation_kwargs),
             Conv1dSamePadding(
                 in_channels=128,
                 out_channels=256,
@@ -50,7 +68,7 @@ class ConvAutoEncoder(pl.LightningModule):
                 bias=False,
             ),
             nn.BatchNorm1d(num_features=256),
-            nn.Tanh(),
+            activations_layers[self.activation](**activation_kwargs),
             Conv1dSamePadding(
                 in_channels=256,
                 out_channels=128,
@@ -59,7 +77,7 @@ class ConvAutoEncoder(pl.LightningModule):
                 bias=False,
             ),
             nn.BatchNorm1d(num_features=128),
-            nn.Tanh(),
+            activations_layers[self.activation](**activation_kwargs),
 
             # GlobalAveragePooling(),
             nn.Flatten(),
@@ -69,19 +87,19 @@ class ConvAutoEncoder(pl.LightningModule):
                 out_features=256,
                 bias=False
             ),
-            nn.Tanh(),
+            activations_layers[self.activation](**activation_kwargs),
             nn.Linear(
                 in_features=256,
                 out_features=128,
                 bias=False
             ),
-            nn.Tanh(),
+            activations_layers[self.activation](**activation_kwargs),
             nn.Linear(
                 in_features=128,
                 out_features=latent_dim,
                 bias=False
             ),
-            nn.Tanh()
+            activations_layers[self.activation](**activation_kwargs),
         )
 
         self.d = nn.Sequential(
@@ -90,13 +108,13 @@ class ConvAutoEncoder(pl.LightningModule):
                 out_features=128,  # Must be equals to original series size
                 bias=False
             ),
-            nn.Tanh(),
+            activations_layers[self.activation](**activation_kwargs),
             nn.Linear(
                 in_features=128,
                 out_features=256,
                 bias=False
             ),
-            nn.Tanh(),
+            activations_layers[self.activation](**activation_kwargs),
             nn.Linear(
                 in_features=256,
                 out_features=128 * in_features,
@@ -113,7 +131,7 @@ class ConvAutoEncoder(pl.LightningModule):
                 bias=False
             ),
             nn.BatchNorm1d(num_features=256),
-            nn.Tanh(),
+            activations_layers[self.activation](**activation_kwargs),
             Conv1dSamePadding(
                 in_channels=256,
                 out_channels=128,
@@ -121,7 +139,7 @@ class ConvAutoEncoder(pl.LightningModule):
                 bias=False
             ),
             nn.BatchNorm1d(num_features=128),
-            nn.Tanh(),
+            activations_layers[self.activation](**activation_kwargs),
             Conv1dSamePadding(
                 in_channels=128,
                 out_channels=1,
@@ -189,7 +207,7 @@ class ConvVariationalAutoEncoder(pl.LightningModule):
                 bias=False,
             ),
             nn.BatchNorm1d(num_features=128),
-            nn.ReLU(),
+            nn.Tanh(),
             Conv1dSamePadding(
                 in_channels=128,
                 out_channels=256,
@@ -198,7 +216,7 @@ class ConvVariationalAutoEncoder(pl.LightningModule):
                 bias=False,
             ),
             nn.BatchNorm1d(num_features=256),
-            nn.ReLU(),
+            nn.Tanh(),
             Conv1dSamePadding(
                 in_channels=256,
                 out_channels=128,
@@ -207,20 +225,20 @@ class ConvVariationalAutoEncoder(pl.LightningModule):
                 bias=False,
             ),
             nn.BatchNorm1d(num_features=128),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Flatten(),
             nn.Linear(
                 in_features=128 * in_features,
                 out_features=256,
                 bias=False
             ),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(
                 in_features=256,
                 out_features=128,
                 bias=False
             ),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(
                 in_features=128,
                 out_features=latent_dim * 2,
@@ -234,13 +252,13 @@ class ConvVariationalAutoEncoder(pl.LightningModule):
                 out_features=128,  # Must be equals to original series size
                 bias=False
             ),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(
                 in_features=128,
                 out_features=256,
                 bias=False
             ),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(
                 in_features=256,
                 out_features=128 * in_features,
@@ -257,7 +275,7 @@ class ConvVariationalAutoEncoder(pl.LightningModule):
                 bias=False
             ),
             nn.BatchNorm1d(num_features=256),
-            nn.ReLU(),
+            nn.Tanh(),
             Conv1dSamePadding(
                 in_channels=256,
                 out_channels=128,
@@ -265,7 +283,7 @@ class ConvVariationalAutoEncoder(pl.LightningModule):
                 bias=False
             ),
             nn.BatchNorm1d(num_features=128),
-            nn.ReLU(),
+            nn.Tanh(),
             Conv1dSamePadding(
                 in_channels=128,
                 out_channels=1,
@@ -295,6 +313,7 @@ class ConvVariationalAutoEncoder(pl.LightningModule):
         log_var = x[:, 1, :]
 
         z = self.reparametrize(mu, log_var)
+
         x_hat = self.d(z)
 
         return x_hat, mu, log_var
@@ -304,7 +323,7 @@ class ConvVariationalAutoEncoder(pl.LightningModule):
         x_hat, mu, log_var = self(x)
 
         recon_loss = nn.functional.mse_loss(
-            x_hat, x, size_average=False
+            x_hat, x
         )
         kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
 
@@ -318,36 +337,15 @@ class ConvVariationalAutoEncoder(pl.LightningModule):
         x_hat, mu, log_var = self(x)
 
         recon_loss = nn.functional.mse_loss(
-            x_hat, x, size_average=False
+            x_hat, x
         )
         kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
 
         loss = recon_loss + kl_loss
 
         self.log('val_loss', loss, prog_bar=True)
-        self.log('val_recon_loss', recon_loss, prog_bar=True)
+        # self.log('val_recon_loss', recon_loss, prog_bar=True)
         return loss
-
-    def test_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
-        x, _ = batch
-        x_hat, mu, log_var = self(x)
-
-        recon_loss = nn.functional.mse_loss(
-            x_hat, x, size_average=False
-        )
-        kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
-
-        loss = recon_loss + kl_loss
-        return loss
-
-    def predict_step(
-        self,
-        batch: Any,
-        batch_idx: int,
-        dataloader_idx: int = 0
-    ) -> Any:
-        x, _ = batch
-        return self(x), x
 
     def configure_optimizers(self) -> Any:
         return optim.Adam(self.parameters(), lr=1e-4)
