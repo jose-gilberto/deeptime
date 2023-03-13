@@ -30,7 +30,7 @@ class LinearClassifier(pl.LightningModule):
     ) -> None:
         super().__init__()
 
-        self.layers = nn.Sequential(*[
+        self.layers = nn.Sequential(
             nn.Linear(
                 in_features=in_features,
                 out_features=hidden_features
@@ -46,7 +46,7 @@ class LinearClassifier(pl.LightningModule):
                 out_features=num_classes
             ),
             nn.Softmax()
-        ])
+        )
 
         self.learning_rate = learning_rate
 
