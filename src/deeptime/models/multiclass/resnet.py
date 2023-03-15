@@ -5,7 +5,7 @@ from typing import Tuple
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from sklearn.metrics import accuracy_score, precision_score, recall_score
+from sklearn.metrics import accuracy_score
 from torch import nn
 
 from deeptime.models.utils import Conv1dSamePadding

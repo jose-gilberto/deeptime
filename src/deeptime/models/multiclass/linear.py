@@ -8,12 +8,11 @@ import torch
 from sklearn.metrics import accuracy_score
 from torch import nn
 
-from deeptime.nn.activations import LeakySineLU, LiSiLU, LiSin
+from deeptime.nn.activations import LeakySineLU, SineLU
 
 activation_layers = {
     'relu': nn.ReLU,
-    'lisin': LiSin,
-    'lisilu': LiSiLU,
+    'sinelu': SineLU,
     'leakysinelu': LeakySineLU
 }
 
